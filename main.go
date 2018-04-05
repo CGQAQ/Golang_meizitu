@@ -1,10 +1,9 @@
 package main
 
 import (
-	"meizitu/meizitu"
+	"Golang_meizitu/meizitu"
 )
 
-var a = 5
 
 func main() {
 	// debug can't read os.Stdin

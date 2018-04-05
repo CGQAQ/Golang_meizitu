@@ -25,8 +25,7 @@
 #   unused-packages = true
 
  required = ["github.com/axgle/mahonia",   #charset lib
-  "github.com/PuerkitoBio/goquery",         # goquery
-   "github.com/chromedp/chromedp"            # headless
+  "github.com/PuerkitoBio/goquery"           # headless
   ]
 
 # [[constraint]]

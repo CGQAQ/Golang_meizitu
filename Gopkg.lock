@@ -89,23 +89,6 @@
   version = "v1.2.0"
 
 [[projects]]
-  name = "github.com/headzoo/surf"
-  packages = [
-    "agent",
-    "errors",
-    "jar",
-    "util"
-  ]
-  revision = "60198774ccce43e1d26c80e961497b7d262460b3"
-  version = "v1.0.0"
-
-[[projects]]
-  name = "github.com/jeffail/tunny"
-  packages = ["."]
-  revision = "59cfa8fcb19f5acba8db07a0dd3cb2fa7edbc228"
-  version = "0.1.1"
-
-[[projects]]
   branch = "master"
   name = "github.com/knq/snaker"
   packages = ["."]
@@ -139,23 +122,17 @@
   revision = "f315e440302883054d0c2bd85486878cb4f8572c"
 
 [[projects]]
-  branch = "release-branch.go1.10"
+  branch = "master"
   name = "golang.org/x/net"
   packages = [
     "html",
     "html/atom"
   ]
-  revision = "0ed95abb35c445290478a5348a7b38bb154135fd"
-
-[[projects]]
-  branch = "v2"
-  name = "gopkg.in/headzoo/surf.v2"
-  packages = ["."]
-  revision = "f6105f769b8739c47e71de37942c478f6d5d9cfc"
+  revision = "b3c676e531a6dc479fa1b35ac961c13f5e2b4d2e"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "25ca52b45ecba05b8ecafbe84d386d2d08e38e574c234e0593043044da0ef517"
+  inputs-digest = "8de0e2e74c4f6760a4ede25c4b2d8c28181a87705eb6e2071bce9b985d6a512b"
   solver-name = "gps-cdcl"
   solver-version = 1

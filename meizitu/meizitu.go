@@ -11,6 +11,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/axgle/mahonia"
+	"strconv"
 )
 
 const meizitu_url string = "http://www.meizitu.com/"
@@ -20,7 +21,7 @@ type Meizitu struct {
 	mainPageContent  string           //主页内容
 	mainPageDocument goquery.Document //主页的goquery.Document
 	categories       []Category       //分类切片
-	selectedCategory Category
+	selectedCategory *Category
 	currentAlbums    Queue
 	currentPage      int
 }
@@ -31,7 +32,7 @@ type Category struct {
 	contents Queue  //分类分页链接
 }
 
-type CategoryNavs struct {
+type CategoryNav struct {
 	name string
 	url  string
 }
@@ -39,7 +40,7 @@ type CategoryNavs struct {
 type Album struct {
 	name   string
 	url    string
-	imgUrl string
+	icon string
 	imgs   Queue
 }
 
@@ -48,7 +49,7 @@ type Img struct {
 	url  string
 }
 
-func fetchContentByUrl(url string) string {
+func (meizi *Meizitu) fetchContentByUrl(url string) string {
 	res, err := http.Get(url)
 	if err != nil {
 		panic(err.Error())
@@ -70,7 +71,7 @@ func fetchContentByUrl(url string) string {
 	return decoder.ConvertString(content)
 }
 
-func fetchContentByReader(reader io.ReadCloser) string {
+func (meizi *Meizitu) fetchContentByReader(reader io.ReadCloser) string {
 	bodyBytes, err := ioutil.ReadAll(reader)
 	if err != nil {
 		panic(err.Error())
@@ -89,7 +90,7 @@ func fetchContentByReader(reader io.ReadCloser) string {
 }
 
 func (meizi *Meizitu) fetchMainContent() {
-	meizi.mainPageContent = fetchContentByUrl(meizitu_url)
+	meizi.mainPageContent = meizi.fetchContentByUrl(meizitu_url)
 	document, err := goquery.NewDocumentFromReader(strings.NewReader(meizi.mainPageContent))
 	if err != nil {
 		panic(err.Error())
@@ -140,6 +141,8 @@ func (meizi *Meizitu) getCategories() {
 //
 //}
 //endregion
+
+//var same string
 
 func (meizi *Meizitu) fetchCategoryPages(cate *Category, ch chan<- int) {
 	urlString := cate.url
@@ -195,45 +198,122 @@ func (meizi *Meizitu) fetchCategoryPages(cate *Category, ch chan<- int) {
 	//	}
 	//})
 
-	resp, err := http.PostForm("http://127.0.0.1:12458", url.Values{"url": {urlString}})
-	if err != nil {
-		panic(err)
+	var (
+		resp *http.Response
+		err error
+	)
+	for {
+		resp, err = http.PostForm("http://127.0.0.1:12458", url.Values{"url": {urlString}})
+		if err != nil {
+			continue
+		} else {
+			break
+		}
 	}
+
 	defer resp.Body.Close()
+	defer func() {
+		err := recover()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}()
 	//document, err := goquery.NewDocumentFromReader(resp.Body)  won't work  don't know why
 
+	//fmt.Printf("\nres.Body %p\n", &resp.Body)
 	bytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil{
 		panic(err)
 	}
 	documentString := string(bytes)
 
+	//if same == ""{
+	//	same = documentString
+	//} else {
+	//	if same == documentString{
+	//		fmt.Println("true")
+	//	}else {
+	//		fmt.Println("false")
+	//	}
+	//	same = documentString
+	//}
+
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(cate.url)
-	fmt.Println(documentString)
+	fmt.Println(urlString)
+	//fmt.Printf("\n%p", &documentString)
 	document, err := goquery.NewDocumentFromReader(strings.NewReader(documentString))
 	if err != nil {
 		panic(err)
 	}
+	//fmt.Printf("\ndocument %p\n", &document)
+	//text := document.Find("title").Text()
+	//fmt.Println(text)
+	document.Find("div#wp_page_numbers ul").Find("li").Each(func(i int, selection *goquery.Selection) {
+		aLable := selection.Find("a")
+		//fmt.Println("aLable.Size() ", aLable.Size())
+		aLableText := aLable.Text()
+		if aLable.Size() == 1{
+			_, err := strconv.Atoi(aLableText)
+			if err == nil{
+				//说明不是特殊链接
+				_url, exists := aLable.Attr("href")
+				if exists{
+					cate.contents.Push(CategoryNav{aLableText, meizitu_cate_base_url + _url})
+				}
+			}
 
-	fmt.Println(document)
+		}
+	})
 
-	//document.Find("div#wp_page_numbers ul").Each(func(i int, selection *goquery.Selection) {
-	//
-	//	name := selection.Text()
-	//	fmt.Println(name, "  ")
-	//
-	//	//url, exists := selection.Attr("href")
-	//	//if exists {
-	//	//
-	//	//} else {
-	//	//}
-	//
-	//})
 	ch <- 1
+}
+
+func (meizi *Meizitu) fetchAlbumImgs(url string) []dataType{
+	var imgs Queue
+
+	docString := meizi.fetchContentByUrl(url)
+	document, e := goquery.NewDocumentFromReader(strings.NewReader(docString))
+	if e!=nil{
+		panic(e)
+	}
+	document.Find("div#picture p").Find("img").Each(func(i int, selection *goquery.Selection) {
+		picUrl, exists := selection.Attr("src")
+		if exists{
+			name, exists := selection.Attr("alt")
+			if exists{
+				imgs.Push(Img{name, picUrl})
+			}
+		}
+	})
+	return imgs.data
+}
+
+func (meizi *Meizitu) fetchCurrentAlbums(url string){
+	docString := meizi.fetchContentByUrl(url)
+	document, e := goquery.NewDocumentFromReader(strings.NewReader(docString))
+	if e!=nil{
+		panic(e)
+	}
+	document.Find("ul.wp-list").Find("li").Each(func(i int, selection *goquery.Selection) {
+		album := Album{}
+		iconUrl, exists := selection.Find("div.pic a img").Attr("src")
+		if exists {
+			album.icon = iconUrl
+		}
+		aLable := selection.Find("h3.tit a")
+		albumUrl, exists := aLable.Attr("href")
+		if exists{
+			album.url = albumUrl
+		}
+
+		album.name = aLable.Text()
+
+		album.imgs.Push(meizi.fetchAlbumImgs(album.url))
+		meizi.currentAlbums.Push(album)
+	})
 }
 
 func (meizi *Meizitu) seek(page int) {
@@ -242,11 +322,12 @@ func (meizi *Meizitu) seek(page int) {
 	//strs = strs[:len(strs)-1]
 	//baseUrl = strings.Join(strs, ".") // instead of replace .html with empty string  because suffix can be .htm etc.
 	//
-	//if page >= 0 && page < meizi.selectedCategory.contents.Size() {
-	//	meizi.currentPage = page
-	//} else {
-	//	meizi.currentPage = 0
-	//}
+	if page >= 0 && page < meizi.selectedCategory.contents.Size() {
+		meizi.currentPage = page
+	} else {
+		meizi.currentPage = 0
+	}
+	meizi.currentAlbums = meizi.selectedCategory.contents
 }
 
 func (meizi *Meizitu) Run() {
@@ -258,7 +339,6 @@ func (meizi *Meizitu) Run() {
 	for i:=0; i< len(meizi.categories); i++ {
 		go meizi.fetchCategoryPages(&meizi.categories[i], chFetchCategoryContent)
 	}
-	meizi.seek(0)
 
 	sum := 0
 	for i := range chFetchCategoryContent {
@@ -281,10 +361,22 @@ func (meizi *Meizitu) Run() {
 	}
 	if cateNumber >= 0 && cateNumber < len(meizi.categories) {
 		// 输入值有效
-		meizi.selectedCategory = meizi.categories[cateNumber]
+		meizi.selectedCategory = &meizi.categories[cateNumber]
 	}
 
-	//meizi.seek(1)
+	//iter := meizi.selectedCategory.contents.Iterator()
+	//iter.Each(func(index int, data dataType) {
+	//	if c, ok := data.(CategoryNav);ok{
+	//		meizi.fetchCurrentAlbums(c.url)
+	//	}
+	//})
+
+	pageData := meizi.selectedCategory.contents.data[meizi.currentPage]
+	if p, ok := pageData.(CategoryNav); ok{
+		meizi.fetchCurrentAlbums(p.url)
+	}
+
+	fmt.Print(meizi)
 
 	defer func() {
 		close(chFetchCategoryContent)

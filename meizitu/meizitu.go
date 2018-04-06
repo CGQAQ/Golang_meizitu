@@ -252,6 +252,9 @@ func (meizi *Meizitu) fetchCategoryPages(cate *Category, ch chan<- int) {
 	//text := document.Find("title").Text()
 	//fmt.Println(text)
 	document.Find("div#wp_page_numbers ul").Find("li").Each(func(i int, selection *goquery.Selection) {
+		if selection.HasClass("thisclass") {
+			cate.contents.Push(CategoryNav{"本页", urlString})
+		}
 		aLable := selection.Find("a")
 		//fmt.Println("aLable.Size() ", aLable.Size())
 		aLableText := aLable.Text()
@@ -376,7 +379,12 @@ func (meizi *Meizitu) Run() {
 		meizi.fetchCurrentAlbums(p.url)
 	}
 
-	fmt.Print(meizi)
+	iterator := meizi.currentAlbums.Iterator()
+	iterator.Each(func(index int, data dataType) {
+		if c, ok := data.(Album); ok{
+			fmt.Println(c)
+		}
+	})
 
 	defer func() {
 		close(chFetchCategoryContent)

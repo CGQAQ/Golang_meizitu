@@ -10,10 +10,12 @@ app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
     })
 );
 
-app.post('/', async (req, res) => {
+app.post('/', (req, res) => {
     console.log(req.body.url)
     if (req.body.url !== null) {
-        await getContent(req.body.url, res)
+        getContent(req.body.url, res).then(ret => {
+            console.log("Url ", ret, "已请求成功！")
+        }).catch(errHander)
     }
 })
 
@@ -71,6 +73,7 @@ async function getContent(url, response) {
             url: url,
             response: response
         })
+        return url
     }
     else{
         var page = await browser.newPage()
@@ -82,6 +85,7 @@ async function getContent(url, response) {
         await page.goto(url, {waitUntil: "networkidle0"})
         response.end(await page.content())
         page.close()
+        return page.url()
     }
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/axgle/mahonia"
 	"strconv"
+	"errors"
 )
 
 const meizitu_url string = "http://www.meizitu.com/"
@@ -300,6 +301,7 @@ func (meizi *Meizitu) fetchCurrentAlbums(url string){
 	if e!=nil{
 		panic(e)
 	}
+	meizi.currentAlbums.Empty()
 	document.Find("ul.wp-list").Find("li").Each(func(i int, selection *goquery.Selection) {
 		album := Album{}
 		iconUrl, exists := selection.Find("div.pic a img").Attr("src")
@@ -325,12 +327,83 @@ func (meizi *Meizitu) seek(page int) {
 	//strs = strs[:len(strs)-1]
 	//baseUrl = strings.Join(strs, ".") // instead of replace .html with empty string  because suffix can be .htm etc.
 	//
-	if page >= 0 && page < meizi.selectedCategory.contents.Size() {
+	length := meizi.selectedCategory.contents.Size()
+
+	if page<0 || page > length + 1  {
+		//无效则置一
 		meizi.currentPage = page
+
+	} else if page == 0{
+		//上一页
+		if meizi.currentPage > 0{
+			meizi.currentPage -= 1
+		} else {
+			meizi.currentPage = length - 1
+		}
+	} else if page == length + 1 {
+		//下一页
+		if meizi.currentPage < length - 1{
+			meizi.currentPage += 1
+		} else {
+			meizi.currentPage = 0
+		}
 	} else {
-		meizi.currentPage = 0
+		meizi.currentPage = page - 1
 	}
-	meizi.currentAlbums = meizi.selectedCategory.contents
+
+	cateNav, e := meizi.selectedCategory.getCurrentPage(meizi.currentPage)
+	if e != nil{
+		fmt.Println(e)
+	}
+	meizi.fetchCurrentAlbums(cateNav.url)
+}
+
+func (cate *Category) getCurrentPage(pageNum int) (cateNav CategoryNav, err error){
+	if pageNum >= cate.contents.Size() || pageNum < 0{
+		err = errors.New("pageNum " + strconv.Itoa(pageNum) + " out of range")
+	} else {
+		_cateNav := cate.contents.data[pageNum]
+		if __cateNav, ok := _cateNav.(CategoryNav); ok{
+			return __cateNav, nil
+		} else {
+			err = errors.New("data in cate.contents.data of this pageNum is invalid")
+		}
+	}
+	return
+}
+
+func (meizi *Meizitu) PageControl(){
+	iter := meizi.selectedCategory.contents.Iterator()
+	var info string
+
+	info += "输入编号进行分页跳转：\n"
+	info += "0：上一页 "
+
+	iter.Each(func(index int, data dataType) {
+		info += strconv.Itoa(index+1) + "：第" + strconv.Itoa(index+1) + "页 "
+	})
+
+	i :=meizi.selectedCategory.contents.Size()+1
+	info += strconv.Itoa(i) + "：下一页"
+	for {
+		fmt.Println(info)
+		var pageNum int
+
+		n, err := fmt.Scanf("%d", &pageNum)
+		if n==1 && err ==nil{
+			if pageNum > i || pageNum < 0{
+				continue
+			} else {
+				meizi.seek(pageNum)
+				break
+			}
+
+		} else {
+			fmt.Println(err, n)
+			return
+		}
+	}
+
 }
 
 func (meizi *Meizitu) Run() {
@@ -362,10 +435,7 @@ func (meizi *Meizitu) Run() {
 	if err != nil {
 		panic(err.Error())
 	}
-	if cateNumber >= 0 && cateNumber < len(meizi.categories) {
-		// 输入值有效
-		meizi.selectedCategory = &meizi.categories[cateNumber]
-	}
+	meizi.changeCategory(cateNumber)
 
 	//iter := meizi.selectedCategory.contents.Iterator()
 	//iter.Each(func(index int, data dataType) {
@@ -373,20 +443,29 @@ func (meizi *Meizitu) Run() {
 	//		meizi.fetchCurrentAlbums(c.url)
 	//	}
 	//})
+	for{
+		meizi.PageControl()
 
-	pageData := meizi.selectedCategory.contents.data[meizi.currentPage]
-	if p, ok := pageData.(CategoryNav); ok{
-		meizi.fetchCurrentAlbums(p.url)
+		iterator := meizi.currentAlbums.Iterator()
+		iterator.Each(func(index int, data dataType) {
+			if c, ok := data.(Album); ok {
+				fmt.Println(c)
+			}
+		})
 	}
 
-	iterator := meizi.currentAlbums.Iterator()
-	iterator.Each(func(index int, data dataType) {
-		if c, ok := data.(Album); ok{
-			fmt.Println(c)
-		}
-	})
+
+
 
 	defer func() {
 		close(chFetchCategoryContent)
 	}()
+}
+
+
+func (meizi *Meizitu) changeCategory(cateNumber int) {
+	if cateNumber >= 0 && cateNumber < len(meizi.categories) {
+		// 输入值有效
+		meizi.selectedCategory = &meizi.categories[cateNumber]
+	}
 }

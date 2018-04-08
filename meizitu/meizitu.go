@@ -13,6 +13,9 @@ import (
 	"github.com/axgle/mahonia"
 	"strconv"
 	"errors"
+	"path/filepath"
+	"os"
+	"bytes"
 )
 
 const meizitu_url string = "http://www.meizitu.com/"
@@ -243,7 +246,7 @@ func (meizi *Meizitu) fetchCategoryPages(cate *Category, ch chan<- int) {
 		panic(err)
 	}
 
-	fmt.Println(urlString)
+	//fmt.Println(urlString)
 	//fmt.Printf("\n%p", &documentString)
 	document, err := goquery.NewDocumentFromReader(strings.NewReader(documentString))
 	if err != nil {
@@ -316,7 +319,7 @@ func (meizi *Meizitu) fetchCurrentAlbums(url string){
 
 		album.name = aLable.Text()
 
-		album.imgs.Push(meizi.fetchAlbumImgs(album.url))
+		album.imgs.Push(meizi.fetchAlbumImgs(album.url)...)
 		meizi.currentAlbums.Push(album)
 	})
 }
@@ -392,8 +395,10 @@ func (meizi *Meizitu) PageControl(){
 		n, err := fmt.Scanf("%d", &pageNum)
 		if n==1 && err ==nil{
 			if pageNum > i || pageNum < 0{
+				fmt.Println("输入无效， 请重新输入！")
 				continue
 			} else {
+				fmt.Println("爬取中。。。。。。。。。")
 				meizi.seek(pageNum)
 				break
 			}
@@ -409,7 +414,7 @@ func (meizi *Meizitu) PageControl(){
 func (meizi *Meizitu) Run() {
 	var cateNumber int
 	chFetchCategoryContent := make(chan int)
-
+	fmt.Println("初始化中。。。。。。。。")
 	meizi.fetchMainContent()
 	meizi.getCategories()
 	for i:=0; i< len(meizi.categories); i++ {
@@ -452,6 +457,14 @@ func (meizi *Meizitu) Run() {
 				fmt.Println(c)
 			}
 		})
+		fmt.Println("是否存储到本地？ 输入1按回车存储，其他放弃")
+		ct := 0
+		fmt.Scan(&ct)
+		if ct == 1{
+			fmt.Println("下载中。。。")
+			meizi.Save()
+		}
+		fmt.Println("下载成功！")
 	}
 
 
@@ -461,6 +474,178 @@ func (meizi *Meizitu) Run() {
 		close(chFetchCategoryContent)
 	}()
 }
+
+func (meizi *Meizitu) preparePath(path string) (dir *os.File){
+	file, err := os.Open(path)
+	if err!=nil{
+		if os.IsNotExist(err){
+			erro := os.Mkdir(path, os.ModeDir)
+			if erro!=nil{
+				fmt.Println(erro)
+				return nil
+			}
+		} else {
+			fmt.Println(err)
+			return nil
+		}
+	} else {
+		return file
+	}
+	return
+}
+
+func (meizi *Meizitu) urlExt(url string) string{
+	split := strings.Split(url, ".")
+	return split[len(split) - 1]
+}
+
+func (meizi *Meizitu) errorHandler(err error) bool{
+	if err!=nil{
+		fmt.Println(err)
+		return true
+	}
+	return false
+}
+
+func (meizi *Meizitu) pathExists(path string) (bool) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false
+	}
+	return false
+}
+
+func (meizi *Meizitu) download(url, path string, ch chan<- string){
+	iconFile, err := os.Create(path)
+	defer iconFile.Close()
+	if meizi.errorHandler(err) {
+		ch<-"url " + url + "下载失败"
+	}
+	resp, err := http.Get(url)
+	if meizi.errorHandler(err) {
+		ch<-"url " + url + "下载失败"
+	}
+	icon, e := ioutil.ReadAll(resp.Body)
+	if meizi.errorHandler(e) {
+		ch<-"url " + url + "下载失败"
+	}
+	_, err = io.Copy(iconFile, bytes.NewReader(icon))
+	if meizi.errorHandler(err) {
+		ch<-"url " + url + "下载失败"
+	}
+	ch<-"url " + url + "下载成功"
+}
+
+/**
+ *  保存当前album中的图片  路径：/meizitu/分类/album/图片
+ */
+func (meizi *Meizitu) Save(){
+	ch := make(chan string)
+	count := 0
+	total := meizi.currentAlbums.Size()
+
+
+	base_path, err := filepath.Abs("./results")
+	if err!=nil{
+		fmt.Println(err)
+		return
+	}
+	meizi.preparePath(base_path)
+	catePathstring := filepath.Join(base_path, meizi.selectedCategory.name)
+	meizi.preparePath(catePathstring)
+
+	iterator := meizi.currentAlbums.Iterator()
+	iterator.Each(func(index int, data dataType) {
+		if album, ok := data.(Album);ok{
+			go meizi.saveGoroutine(album, catePathstring, ch)
+		}
+	})
+
+	for{
+		if count>=total{
+			break
+		}
+		select {
+		case str := <-ch:
+			count += 1
+			fmt.Println("Album: " + str + " 下载完成！  总进度： （" + strconv.Itoa(count) + "/" + strconv.Itoa(total) + ")")
+		}
+	}
+}
+
+
+func (meizi *Meizitu) saveGoroutine(album Album, catePathstring string, ch chan<- string){
+	chicon := make(chan string)
+	chimgs := make(chan string)
+
+	all := false
+	ct := 0
+
+	totalImageNum := album.imgs.Size()
+	currentImageNum := 0
+
+
+	albumPathString := filepath.Join(catePathstring, album.name)
+
+	if meizi.pathExists(albumPathString){
+		for {
+			fmt.Println(album.name, "已经存在，是否要重新下载：")
+			fmt.Println("1: 重新下载当前album")
+			fmt.Println("2: 重新下载所有已重复album")
+			fmt.Println("3: 跳过当前album")
+			fmt.Println("4: 跳过所有已重复album")
+			if !all{
+				fmt.Scan(&ct)
+			}
+			switch ct {
+			case 1:
+				break
+			case 2:
+				all = true
+				break
+			case 3:
+				return
+			case 4:
+				all = true
+				return
+			default:
+				fmt.Println("输入错误请重新输入！")
+				continue
+			}
+		}
+	}
+
+	meizi.preparePath(albumPathString)
+
+	iconExt := meizi.urlExt(album.icon)
+	iconPathString := filepath.Join(albumPathString, album.name + "." + iconExt)
+	go meizi.download(album.icon, iconPathString, chicon)
+
+	imgPath := filepath.Join(albumPathString, "imgs")
+	meizi.preparePath(imgPath)
+	iterator := album.imgs.Iterator()
+	iterator.Each(func(index int, data dataType) {
+		if img, ok := data.(Img); ok{
+			ext := meizi.urlExt(img.url)
+			//fmt.Println(img.url)
+			go meizi.download(img.url, filepath.Join(imgPath, img.name + "." + ext), chimgs)
+		}
+	})
+	for i:= 0; i < totalImageNum+1; i++{
+		select {
+		case str1 := <-chicon:
+			fmt.Println(str1)
+		case str2 := <-chimgs:
+			currentImageNum += 1
+			fmt.Println(str2 + "(" + strconv.Itoa(currentImageNum) + "/" + strconv.Itoa(totalImageNum) + ")")
+		}
+	}
+	ch <- album.name
+}
+
 
 
 func (meizi *Meizitu) changeCategory(cateNumber int) {
